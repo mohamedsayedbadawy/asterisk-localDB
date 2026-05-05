@@ -1,0 +1,93 @@
+barge_in:
+  energy_threshold: 800
+  cooldown_ms: 300
+  pipeline_min_ms: 100
+  pipeline_energy_threshold: 200
+  pipeline_talk_detect_silence_ms: 800
+  pipeline_talk_detect_talking_threshold: 200
+  post_tts_end_protection_ms: 200
+  greeting_protection_ms: 3000
+  provider_output_suppress_ms: 800
+  provider_output_suppress_extend_ms: 400
+  provider_output_suppress_chunk_extend_ms: 150
+contexts:
+  default:
+    greeting: Hello My name is Mohamed Sayed
+    prompt: 'You are Ava, an AI Assistant for Main Telecom. Be helpful and concise.
+      KNOWLEDGE BASE (STRICT RULES): - You have NO knowledge of your own. For ANY
+      question, you MUST call the knowledge_base tool first. - ONLY use the exact
+      information returned by the knowledge_base tool. Do NOT add, assume, or invent
+      any information. - If the tool returns a relevant answer, read it naturally
+      and conversationally. Do not change the facts. - If the tool returns an empty
+      or irrelevant answer, say EXACTLY: "I am sorry, I do not have information about
+      that. Is there anything else I can help you with?" - NEVER guess, assume, or
+      use your own knowledge to answer any question. - NEVER mention tool names, databases,
+      or the knowledge base to the caller.
+      TRANSFER PROTOCOL: - If the caller says "human", "agent", "support", "real person",
+      or asks to be transferred, say "Please hold, transferring you now" then IMMEDIATELY
+      use the blind_transfer tool with destination human_agent. - NEVER mention tool
+      names to the caller.
+      CALL ENDING: - When the caller indicates they are done, say a brief farewell,
+      then use the hangup_call tool. - NEVER mention tools or the word "hangup_call"
+      to the caller.'
+    tools:
+    - blind_transfer
+    - cancel_transfer
+    - hangup_call
+    disable_global_in_call_tools: []
+default_provider: google_live
+pipelines:
+  local_hybrid:
+    tools: null
+providers:
+  openai_realtime:
+    enabled: true
+    greeting: Hello
+    instructions: You are Ava, an AI Assistant for Main Telecom. Be helpful and concise.
+      For ANY question call the knowledge_base tool first. ONLY use what the tool
+      returns. NEVER use your own knowledge. For transfers use blind_transfer. For
+      ending use hangup_call.
+streaming:
+  greeting_rtp_wait_ms: 150
+  jitter_buffer_ms: 0
+  low_watermark_ms: 60
+  min_start_ms: 40
+  normalizer:
+    max_gain_db: 6
+    target_rms: 800
+in_call_tools:
+  knowledge_base:
+    kind: in_call_http_lookup
+    phase: in_call
+    enabled: true
+    is_global: true
+    timeout_ms: 5000
+    url: http://192.168.1.57:8001/search
+    method: POST
+    headers:
+      Content-Type: application/json
+    query_params: {}
+    description: Search the company knowledge base to answer any question about Main
+      Telecom services, CUBEX platform, pricing, departments, or support. Always call
+      this before answering any question.
+    parameters:
+    - name: q
+      type: string
+      description: The caller's question or query
+      required: true
+    return_raw_json: true
+    error_message: I am sorry, I do not have information about that. Is there anything
+      else I can help you with?
+    body_template: '{"q": "{q}"}'
+tools:
+  transfer:
+    destinations:
+      human_agent:
+        target: '2005'
+        type: extension
+vad:
+  min_utterance_duration_ms: 400
+  utterance_padding_ms: 150
+  webrtc_aggressiveness: 2
+  webrtc_end_silence_frames: 30
+  webrtc_start_frames: 2

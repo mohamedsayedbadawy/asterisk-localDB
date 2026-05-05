@@ -1,0 +1,143 @@
+barge_in:
+  energy_threshold: 800
+  cooldown_ms: 300
+  pipeline_min_ms: 100
+  pipeline_energy_threshold: 200
+  pipeline_talk_detect_silence_ms: 800
+  pipeline_talk_detect_talking_threshold: 200
+  post_tts_end_protection_ms: 200
+  greeting_protection_ms: 3000
+  provider_output_suppress_ms: 800
+  provider_output_suppress_extend_ms: 400
+  provider_output_suppress_chunk_extend_ms: 150
+contexts:
+  default:
+    greeting: Hello My name is Mohamed Sayed
+    prompt: 'You are Ava, an AI Assistant. Be helpful and concise.
+
+
+      KNOWLEDGE BASE: - When the caller asks any question about the company, services,
+      or any information, ALWAYS call the knowledge_base tool first before answering.
+      - If the tool returns an answer, speak it naturally as if you already knew it.
+      - If the tool returns no answer, say exactly: "I am sorry, I do not have information
+      about that. Is there anything else I can help you with?" - NEVER mention tool
+      names to the caller.
+
+
+      TRANSFER PROTOCOL: - If the caller says "human", "agent", "support", "real person",
+      or asks to be transferred, say "Please hold, transferring you now" then IMMEDIATELY
+      use the blind_transfer tool with destination human_agent. - NEVER mention tool
+      names to the caller.
+
+
+      CALL ENDING: - When the caller indicates they are done, say a brief farewell,
+      then use the hangup_call tool. - NEVER mention tools or the word "hangup_call"
+      to the caller.
+
+
+      CALL ENDING: - When the caller indicates they are done, say a brief farewell,
+      then use the hangup_call tool to end the call. - NEVER mention tools or the
+      word "hangup_call" to the caller.'
+    tools:
+    - blind_transfer
+    - cancel_transfer
+    - hangup_call
+    - knowledge_base
+    - attended_transfer
+    - live_agent_transfer
+    - transfer
+    in_call_http_tools:
+    - knowledge_base
+    disable_global_in_call_tools: []
+default_provider: openai_realtime
+pipelines:
+  local_hybrid:
+    tools: null
+providers:
+  openai_realtime:
+    enabled: true
+    greeting: Hello
+    instructions: 'You are Ava, an AI voice assistant for Main Telecom. Always speak
+      your responses out loud and be concise.
+
+
+      COMPANY INFO (CRITICAL): When the caller asks ANYTHING about Main Telecom, its
+      services, CUBEX platform, pricing, departments, or support - ALWAYS call the
+      knowledge_base tool first before answering. Speak the answer naturally. NEVER
+      mention tool names.
+
+
+      TRANSFER PROTOCOL: If caller says human, agent, support, person, transfer, representative
+      - immediately call blind_transfer to extension 2005. Say exactly: ''Please hold,
+      I am transferring you now.'' Do NOT hesitate.
+
+
+      CALL ENDING: When caller is done, say farewell then use hangup_call tool.'
+streaming:
+  greeting_rtp_wait_ms: 150
+  jitter_buffer_ms: 0
+  low_watermark_ms: 60
+  min_start_ms: 40
+  normalizer:
+    max_gain_db: 6
+    target_rms: 800
+in_call_tools:
+  company_info_lookup:
+    body_template: "{\n  \"chatInput\": \"{{userMessage}}\",\n  \"sessionId\": \"\
+      {{call_id}}\"\n}"
+    description: Use this to answer any question about Main Telecom, CUBEX platform,
+      services, pricing, departments, or support procedures.
+    enabled: true
+    error_message: I'm sorry, I couldn't retrieve that information right now.
+    headers:
+      Content-Type: application/json
+    is_global: false
+    kind: in_call_http_lookup
+    method: POST
+    output_variables: {}
+    parameters:
+    - description: The caller's question
+      name: userMessage
+      required: true
+      type: string
+    phase: in_call
+    query_params:
+      q: $(q)
+    return_raw_json: true
+    timeout_ms: 10000
+    url: http://192.168.1.43:5678/webhook/Ai-agent
+  knowledge_base:
+    description: Search the company PDF knowledge base to answer any question about
+      Main Telecom services, CUBEX platform, pricing, departments, or support procedures.
+      Always call this tool when the caller asks any question before answering.
+    enabled: true
+    error_message: I'm sorry, I couldn't retrieve that information right now.
+    headers:
+      Content-Type: application/json
+    is_global: true
+    kind: in_call_http_lookup
+    method: GET
+    output_variables: {}
+    parameters:
+    - description: The caller's question or query
+      name: q
+      required: true
+      type: string
+    phase: in_call
+    query_params:
+      q: $(q)
+    return_raw_json: true
+    timeout_ms: 5000
+    url: http://192.168.1.57:8001/search
+tools:
+  transfer:
+    destinations:
+      human_agent:
+        target: '2005'
+        type: extension
+vad:
+  min_utterance_duration_ms: 400
+  utterance_padding_ms: 150
+  webrtc_aggressiveness: 2
+  webrtc_end_silence_frames: 30
+  webrtc_start_frames: 2

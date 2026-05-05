@@ -1,0 +1,369 @@
+## template: jinja
+#cloud-config
+
+# SET OUR VARIABLES
+# =================
+
+# Ubuntu Pro token from: https://ubuntu.com/pro/dashboard (not needed for Ubuntu Pro instances on Azure, AWS, or Google Cloud)
+
+
+# SMTP credentials (sendgrid and gmail example configurations)
+# sendgrid: https://console.cloud.google.com/marketplace/product/sendgrid-app/sendgrid-email
+# 
+# 
+# 
+# substitute `YOUR-API-KEY-HERE` below, with your API KEY, https://app.sendgrid.com/settings/api_keys
+# 
+
+# gmail:
+# 
+# 
+# replace `YOUREMAIL@GMAIL.COM` with your email, get `YOUR-APP-PASSWORD` from: https://myaccount.google.com/apppasswords
+# 
+# 
+
+
+
+
+
+
+# NOTIFICATION_EMAIL address for daily crontab notifications
+
+
+# HOSTNAME and FQDN are used by Postfix, and necessary for Sendgrid
+# HOSTNAME: subdomain of FQDN (e.g. `server` for `server.example.com`)
+# FQDN (e.g. `example.com` or `server.example.com`)
+
+
+
+# OPTIONAL: PRECONFIGURE FREEPBX CORE MODULE (OUTBOUND ROUTES AND TRUNKS)
+# ubuntupbx.core.backup.tar.gz was generated with the Backup & Restore FreePBX Module
+# this can be replaced with the address of your backup file, if you're copying configurations from another FreePBX installation
+
+# ubuntupbx.core.backup.tar.gz Outbound Routes include: N11, North America FoIP, North America VoIP, International VoIP
+# ubuntupbx.core.backup.tar.gz SIP Trunks include:
+      # https://t38fax.com
+  # https://flowroute.com
+     # https://telnyx.com
+      # https://bulkvs.com
+
+# List of public IPv4 addresses that should never be blocked by fail2ban
+# - Use standard dotted decimal notation for each IP address or CIDR (slash) notation IP ranges
+# - Separate multiple entries with a space, and do not use commas:
+# 
+
+
+# TIMEZONE: default value is fine
+# As represented in /usr/share/zoneinfo. An empty string ('') will result in UTC time being used.
+
+
+# TIME TO INSTALL AND REBOOT UBUNTU FOR SECURITY PATCHES FROM CANONICAL IN XX:XX FORMAT
+
+
+
+# NUMBER OF DAYS TO RETAIN CDR AND CEL RECORDS IN FREEPBX
+
+
+
+# PHP 8.2 IS OFFICIALLY TESTED WITH FREEPBX BY SANGOMA, PHP 8.2 IS SECURITY MAINTAINED UNTIL 31 Dec 2026 FROM THE PHP GROUP (UPSTREAM)
+# PHP 8.3 IS COMPATIBLE WITH FREEPBX AND ALL AVAILABLE MODULES, PHP 8.3 GETS SECURITY PATCHING UNTIL 2036 THROUGH CANONICAL, THE PUBLISHERS OF UBUNTU
+# PHP_VERSION = 8.2|8.3
+
+
+# =========================
+# END OF SETTING VARIABLES
+
+# SIP Signaling IPs for each provider
+# T38Fax: https://helpdesk.t38fax.com/hc/en-us/articles/360053046071-Recommended-Firewall-Settings
+# Flowroute: https://manage.flowroute.com/accounts/interconnection/setup/ or https://support.bcmone.com/flowroute-support/docs/configure-an-inbound-route-with-your-preferred-pop#pop-options
+# Telnyx: https://sip.telnyx.com/
+# Bulkvs: `dig +short SRV _sip._udp.sip.bulkvs.com | awk '{print $4}' | xargs -I {} dig +short {}`
+
+
+
+
+
+  
+    
+  
+
+  
+
+  
+
+  
+    
+  
+
+
+
+# FQDN could be a subdomain, so we determine the domain programmatically 
+
+
+  
+
+
+hostname: asterisk
+fqdn: asterisk.local
+
+users:
+  - name: asterisk
+    gecos: 'Asterisk User'
+    groups: users
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    shell: /bin/bash
+    lock_passwd: true
+
+write_files:
+  - path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+    permissions: '0644'
+    content: |
+      [Timer]
+      OnCalendar=
+      OnCalendar=04:10
+      RandomizedDelaySec=0
+  - path: /etc/postfix/sasl_passwd
+    permissions: '0400'
+    content: |
+      []: :
+  - path: /etc/systemd/system/freepbx.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=FreePBX
+      After=mariadb.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/sbin/fwconsole start -q
+      ExecStop=/usr/sbin/fwconsole stop -q
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/odbcinst.ini
+    permissions: '0644'
+    content: |
+      [MySQL]
+      Description = ODBC for MySQL (MariaDB)
+      Driver = libmaodbc.so
+      FileUsage = 1
+  - path: /etc/logrotate.d/asterisk-custom
+    permissions: '0644'
+    content: |
+      /var/log/asterisk/backup*.log {
+          weekly
+          missingok
+          rotate 1
+          maxage 7
+          su asterisk asterisk
+      }
+      /var/log/asterisk/core*.log /var/log/asterisk/freepbx*.log /var/log/asterisk/asterisk*.log /var/log/asterisk/debug /var/log/asterisk/messages /var/log/asterisk/full /var/log/asterisk/*_log {
+          daily
+          missingok
+          rotate 3
+          sharedscripts
+          su asterisk asterisk
+          postrotate
+              cd /home/asterisk && /usr/sbin/invoke-rc.d asterisk logger-reload > /dev/null 2> /dev/null
+          endscript
+      }
+  - path: /etc/fail2ban/jail.local
+    permissions: '0644'
+    content: |
+      [DEFAULT]
+
+      destemail = admin@example.com
+      sender = no-reply@asterisk.local
+
+      ignoreip = 127.0.0.0/8  8.20.91.194 8.34.182.111 8.34.182.112 130.51.64.200/29 130.51.65.200/29 130.51.66.200/29 130.51.67.200/29 162.249.171.198 23.190.16.198 76.8.29.198
+
+      [sshd]
+      enabled = true
+      action = iptables[name=sshd, port=22, protocol=tcp]
+
+      [asterisk]
+      enabled = true
+      filter = asterisk
+      backend = auto
+      logpath = /var/log/asterisk/asterisk_security.log
+      maxretry = 3
+      findtime = 120
+      bantime = 1h
+      action = iptables[name=asterisk, port=5060, protocol=udp]
+               %(action_mw)s
+
+      [freepbx]
+      enabled = true
+      backend = auto
+      logpath  = /var/log/asterisk/freepbx_security.log
+      maxretry = 3
+      findtime = 120
+      bantime = 1h
+      action = iptables[name=freepbx, port=80, protocol=tcp]
+               %(action_mw)s
+  - path: /var/log/asterisk/asterisk_security.log
+    permissions: '0664'
+    content: |
+      ---LOG BEGINS---
+  - path: /var/log/asterisk/freepbx_security.log
+    permissions: '0664'
+    content: |
+      ---LOG BEGINS---
+  - path: /etc/fail2ban/filter.d/freepbx.conf
+    permissions: '0644'
+    content: |
+      [Definition]
+      failregex = ^\[.*\] \[freepbx_security\.NOTICE\]: Authentication failure for .* from <HOST> .*$
+      ignoreregex =
+  - path: /root/schedule.txt
+    permissions: '0644'
+    content: |
+
+      MAILTO=admin@example.com
+
+      @daily (find /var/spool/asterisk/monitor/*/ -type d -mtime +365 -exec rm -rf {} + 2>/dev/null; find /var/spool/asterisk/monitor/*/*/*/ -type d -mtime +5 -exec rm -rf {} + 2>/dev/null; find /var/spool/asterisk/monitor -type f -size 44c -delete)
+      @daily find /var/spool/asterisk/voicemail -type f -name msg????.??? -mtime +45 -delete
+      @daily find /var/www/html/admin/modules/_cache -type f -mtime 365 -delete
+      @daily mysql -u root asteriskcdrdb -e 'DELETE FROM cdr WHERE calldate < DATE_SUB(NOW(), INTERVAL 60 DAY); optimize table cdr;'
+      @daily mysql -u root asteriskcdrdb -e 'DELETE FROM cel WHERE eventtime < DATE_SUB(NOW(), INTERVAL 60 DAY); optimize table cel;'
+
+apt:
+  conf: |+
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Download-Upgradeable-Packages "1";
+      APT::Periodic::AutocleanInterval "7";
+      APT::Periodic::Unattended-Upgrade "1";
+
+
+# `apt update && apt upgrade -y` and reboot if /var/run/reboot-required while provisioning
+package_update: true
+package_upgrade: true
+package_reboot_if_required: true
+
+
+
+
+timezone: Africa/Cairo
+
+
+packages:
+  - apache2
+  - asterisk
+  - asterisk-mp3
+  - asterisk-moh-opsound-wav
+  - asterisk-moh-opsound-gsm
+  - asterisk-moh-opsound-g722
+  - fail2ban
+  - ffmpeg
+  - lame
+  - mariadb-server
+  - mariadb-client
+  - mpg123
+  - nodejs
+  - npm
+  - odbc-mariadb
+  - php-pear
+  - php8.3
+  - php8.3-cli
+  - php8.3-common
+  - php8.3-curl
+  - php8.3-gd
+  - php8.3-intl
+  - php8.3-mbstring
+  - php8.3-mysql
+  - php8.3-soap
+  - php8.3-xml
+  - postfix
+  - sox
+  - unixodbc
+
+runcmd:
+# add public IPv4 to ignoreip for fail2ban
+  - |
+    PUBLIC_IP=$(curl -s https://checkip.amazonaws.com) && [ -n "$PUBLIC_IP" ] && ! grep -q "$PUBLIC_IP" /etc/fail2ban/jail.local && sed -i "s/^ignoreip = \(.*\)/ignoreip = \1 ${PUBLIC_IP}/" /etc/fail2ban/jail.local
+    systemctl restart fail2ban
+# for Ubuntu Pro enabled public cloud images, where a token may not be provided by the user
+  - pro status --format yaml | grep -x attached:\ true && pro status --format yaml | grep -A1 name:\ esm-infra | grep -q status:\ disabled && pro enable esm-infra
+  - pro status --format yaml | grep -x attached:\ true && pro status --format yaml | grep -A1 name:\ esm-apps | grep -q status:\ disabled && pro enable esm-apps
+  - pro status --format yaml | grep -x attached:\ true && pro status --format yaml | grep -A1 name:\ livepatch | grep -q status:\ disabled && pro enable livepatch
+  - sed -i "s/^#\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+  - needrestart -r a
+  - sed -i 's|^//\s*Unattended-Upgrade::Remove-Unused-Kernel-Packages\s*".*";|Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";|' /etc/apt/apt.conf.d/50unattended-upgrades
+  - sed -i 's|^//\s*Unattended-Upgrade::Remove-New-Unused-Dependencies\s*".*";|Unattended-Upgrade::Remove-New-Unused-Dependencies "true";|' /etc/apt/apt.conf.d/50unattended-upgrades
+  - sed -i 's|^//\s*Unattended-Upgrade::Remove-Unused-Dependencies\s*".*";|Unattended-Upgrade::Remove-Unused-Dependencies "true";|' /etc/apt/apt.conf.d/50unattended-upgrades
+  - sed -i 's|^//\s*Unattended-Upgrade::Automatic-Reboot\s*".*";|Unattended-Upgrade::Automatic-Reboot "true";|' /etc/apt/apt.conf.d/50unattended-upgrades
+  - sed -i 's|^//\s*Unattended-Upgrade::Automatic-Reboot-WithUsers\s*".*";|Unattended-Upgrade::Automatic-Reboot-WithUsers "true";|' /etc/apt/apt.conf.d/50unattended-upgrades
+  - sed -i 's|^//\s*Unattended-Upgrade::Automatic-Reboot-Time\s*".*";|Unattended-Upgrade::Automatic-Reboot-Time "04:30";|' /etc/apt/apt.conf.d/50unattended-upgrades
+# Erase Oracle Cloud's default restrictive iptables rules
+  - iptables -L | grep -q -v '^Chain' && iptables -F && netfilter-persistent save || echo "No iptables rules found"
+# fallocate -l 2G of space for swap file
+  - fallocate -l 2G /swapfile
+# Set permission of the swap file to be readable and writable only by the owner  
+  - chmod 600 /swapfile
+# Create a Linux swap area on the file
+  - mkswap /swapfile
+# Enable the swap file
+  - swapon /swapfile
+# Add the swap file to the /etc/fstab file if it is not already there
+  - grep -qxF '/swapfile none swap sw 0 0' /etc/fstab || sed -i -e "\$a/swapfile none swap sw 0 0" /etc/fstab
+
+  - chown -R asterisk:asterisk /etc/asterisk
+  - chown -R asterisk:asterisk /var/{lib,log,spool}/asterisk
+  - sed -i 's|#AST_USER|AST_USER|' /etc/default/asterisk
+  - sed -i 's|#AST_GROUP|AST_GROUP|' /etc/default/asterisk
+  - sed -i 's|;runuser|runuser|' /etc/asterisk/asterisk.conf
+  - sed -i 's|;rungroup|rungroup|' /etc/asterisk/asterisk.conf
+  - ldconfig
+
+  - sed -i 's/\(^upload_max_filesize = \).*/\120M/' /etc/php/8.3/apache2/php.ini
+  - sed -i 's/\(emory_limit = \).*/\1256M/' /etc/php/8.3/apache2/php.ini
+  - sed -i 's/^\(User\|Group\).*/\1 asterisk/' /etc/apache2/apache2.conf
+  - sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+  - a2enmod rewrite
+  - rm /var/www/html/index.html
+  - systemctl restart apache2
+  - systemctl stop asterisk
+# Asterisk and FreePBX use /var/lib/asterisk/sounds/en/custom and not the `custom -> ../../../local/share/asterisk/sounds` symlink in /usr/share/asterisk/sounds/
+  - rm -rf /usr/share/asterisk/sounds/custom; ln -s /var/lib/asterisk/sounds/en/custom /usr/share/asterisk/sounds/custom
+# FreePBX expects default MOH files in /var/lib/asterisk/moh/default, but Ubuntu's deb package places them in /usr/share/asterisk/moh/
+  - ln -s /usr/share/asterisk/moh /var/lib/asterisk/moh/asterisk-moh-opsound
+  - chown -R asterisk:asterisk /usr/share/asterisk/moh && chown -R asterisk:asterisk /var/lib/asterisk/moh/
+  - curl -L -O --output-dir /var/tmp http://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz && tar zxvf /var/tmp/freepbx-17.0-latest.tgz -C /usr/src
+  - cd /usr/src/freepbx && ./start_asterisk start
+  - while asterisk -rx 'core show version' 2>&1 | grep -Eq '(Unable to connect to remote asterisk|No such command)'; do echo 'Waiting for Asterisk core to be available'; sleep 2; done && cd /usr/src/freepbx && ./install -n;
+# FreePBX is unaware of Ubuntu Noble's new mysql socket location
+  - sed -i 's|Socket=/var/lib/mysql/mysql.sock|Socket=/run/mysqld/mysqld.sock|' /etc/odbc.ini
+  - fwconsole ma downloadinstall pm2 framework customappsreg featurecodeadmin recordings soundlang calendar conferences core ivr infoservices queues ringgroups timeconditions asteriskinfo voicemail logfiles dashboard music filestore backup sipsettings
+  - systemctl enable freepbx
+  - crontab /root/schedule.txt && rm /root/schedule.txt
+  - mkdir -p /var/spool/asterisk/backup && chown asterisk:asterisk /var/spool/asterisk/backup
+  - curl -L -O --output-dir /var/spool/asterisk/backup https://github.com/rajannpatel/ubuntupbx/raw/refs/heads/main/ubuntupbx.asterisklogs.backup.tar.gz
+  - fwconsole backup --restore='/var/spool/asterisk/backup/ubuntupbx.asterisklogs.backup.tar.gz'
+
+  - curl -L -o /var/spool/asterisk/backup/restored-at-first-boot.tar.gz https://github.com/rajannpatel/ubuntupbx/raw/refs/heads/main/ubuntupbx.core.backup.tar.gz
+
+
+  - fwconsole backup --restore='/var/spool/asterisk/backup/restored-at-first-boot.tar.gz'
+
+# BEGIN -- ubuntupbx.core.backup.tar.gz
+
+  - echo "DELETE FROM ampusers;" | fwconsole mysql
+  - echo "DELETE FROM kvstore_OOBE;" | fwconsole mysql
+# Configure FoIP Trunks and Outbound Routes
+
+  - echo "use asterisk; INSERT INTO outbound_route_trunks (route_id, trunk_id, seq) VALUES (12, 9, 0);" | fwconsole mysql
+
+# Configure VoIP Trunks and Outbound Routes
+
+  - echo "use asterisk; DELETE FROM trunks where trunkid='10'; DELETE FROM pjsip where id='10';" | fwconsole mysql
+
+
+  - echo "use asterisk; DELETE FROM trunks where trunkid='11'; DELETE FROM pjsip where id='11';" | fwconsole mysql
+
+
+
+# END -- ubuntupbx.core.backup.tar.gz
+  - echo "INSERT INTO sipsettings (keyword, data) VALUES ('t38pt_udptl', 'redundancy') ON DUPLICATE KEY UPDATE data = 'redundancy';" | fwconsole mysql
+  - fwconsole chown
+  - fwconsole reload
+  - fwconsole restart
+  - echo "cloud-init RUNCMD COMPLETED AT $(date)"
